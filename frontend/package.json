@@ -1,0 +1,7 @@
+{
+  "name": "document-desk",
+  "private": true,
+  "scripts": { "dev": "vite", "build": "vite build" },
+  "dependencies": { "vite": "latest", "react": "latest", "react-dom": "latest" },
+  "devDependencies": { "@vitejs/plugin-react": "latest" }
+}
