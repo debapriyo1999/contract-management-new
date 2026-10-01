@@ -6,6 +6,7 @@ Run once from the backend folder:
 """
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import os
 import random
 import sqlite3
 
@@ -17,7 +18,7 @@ import chatbot
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data" / "contracts"
 DATABASE = BASE_DIR / "documents.db"
-CONTRACT_COUNT = 200
+CONTRACT_COUNT = int(os.getenv("CONTRACT_COUNT", "200"))
 
 CONTRACT_TYPES = ["Master Service Agreement", "Statement of Work", "Non-Disclosure Agreement", "Vendor Agreement", "Renewal Contract"]
 COMPANIES = [
