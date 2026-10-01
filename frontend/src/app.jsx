@@ -41,6 +41,12 @@ const submitSharedApproval = (token) => request(`/approvals/share/${encodeURICom
 
 const downloadUrl = (contractId) => `${API}/documents/${contractId}/download`;
 
+const uploadContract = (owner, formData) => request("/documents/upload", {
+  method: "POST",
+  headers: { "X-User": owner },
+  body: formData
+});
+
 const askQuestion = (owner, question, conversation = "") => request("/chat/question", {
   method: "POST",
   headers: { "Content-Type": "application/json", "X-User": owner },
@@ -96,6 +102,72 @@ function StatCards({ documents }) {
           <span>{card.label}</span>
         </div>
       ))}
+    </section>
+  );
+}
+
+function UploadForm({ user, onUploaded }) {
+  const [file, setFile] = useState(null);
+  const [contractType, setContractType] = useState("");
+  const [counterparty, setCounterparty] = useState("");
+  const [department, setDepartment] = useState("Legal");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const handleUpload = async (event) => {
+    event.preventDefault();
+    if (!file || busy) return;
+    setBusy(true);
+    setMessage("");
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("contract_type", contractType || "Uploaded Document");
+    formData.append("counterparty", counterparty || "Unspecified");
+    formData.append("department", department);
+    try {
+      const result = await uploadContract(user, formData);
+      setMessage(`${result.filename} uploaded and queued for verification.`);
+      setFile(null);
+      setContractType("");
+      setCounterparty("");
+      await onUploaded();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card upload-card">
+      <div className="upload-heading">
+        <div>
+          <p className="eyebrow">NEW CONTRACT</p>
+          <h2>Upload a document</h2>
+        </div>
+        <span className="file-limit">Max 10 MB</span>
+      </div>
+      <form onSubmit={handleUpload}>
+        <label>Counterparty
+          <input value={counterparty} onChange={(event) => setCounterparty(event.target.value)} placeholder="Company name" />
+        </label>
+        <label>Department
+          <select value={department} onChange={(event) => setDepartment(event.target.value)}>
+            {["Legal", "Finance", "IT", "Procurement", "Sales"].map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label>Contract type
+          <input value={contractType} onChange={(event) => setContractType(event.target.value)} placeholder="e.g. Master Service Agreement" />
+        </label>
+        <label className="drop">
+          <span className="upload-icon" aria-hidden="true">+</span>
+          <strong>{file ? file.name : "Choose a PDF, DOC, DOCX, or TXT file"}</strong>
+          <small>Verification begins automatically after upload.</small>
+          <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={(event) => setFile(event.target.files?.[0] ?? null)} required />
+        </label>
+        <button className="primary" disabled={busy || !file}>{busy ? "Uploading..." : "Upload for verification"}</button>
+        {message && <p className="message">{message}</p>}
+      </form>
     </section>
   );
 }
@@ -491,6 +563,7 @@ function App() {
 
       <section className="grid">
         <ApprovalReport report={report} onOpenSubmission={() => setPage("approval-submit")} />
+        <UploadForm user={user} onUploaded={() => loadWorkspace(user)} />
         <Documents documents={documents} />
       </section>
     </main>

@@ -9,8 +9,8 @@ import secrets
 import sqlite3
 import uvicorn
 
-from chatbot import answer_question, initialize_index
-from fastapi import FastAPI, Header, HTTPException
+from chatbot import answer_question, extract_file_text, initialize_index, replace_source
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -31,6 +31,15 @@ load_dotenv(BASE_DIR / ".env")
 SHARE_SECRET = os.getenv("SECRET_KEY", "development-contract-share-secret").encode()
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt"}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_STAGE_DEFINITIONS = [
+    ("Legal Review", "Legal", 3),
+    ("Finance Review", "Finance", 4),
+    ("Department Head Approval", None, 3),
+    ("Final Sign-off", "Executive", 2),
+]
+
 def db_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(DATABASE)
     connection.row_factory = sqlite3.Row
@@ -44,6 +53,29 @@ def initialize_database() -> None:
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS contracts (
+                contract_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                stored_name TEXT NOT NULL,
+                contract_type TEXT NOT NULL,
+                counterparty TEXT NOT NULL,
+                department TEXT NOT NULL,
+                status TEXT NOT NULL,
+                effective_date TEXT NOT NULL,
+                expiry_date TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS approval_stages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                contract_id INTEGER NOT NULL REFERENCES contracts(contract_id),
+                stage_order INTEGER NOT NULL,
+                stage_name TEXT NOT NULL,
+                assigned_department TEXT NOT NULL,
+                expected_days INTEGER NOT NULL,
+                entered_at TEXT,
+                completed_at TEXT,
+                stage_status TEXT NOT NULL
             );
         """)
 
@@ -126,6 +158,65 @@ def decode_share_token(token: str) -> dict:
         return data
     except (ValueError, KeyError, TypeError, json.JSONDecodeError, base64.binascii.Error):
         raise HTTPException(status_code=400, detail="Invalid approval link")
+
+@app.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    contract_type: str = Form("Uploaded Document"),
+    counterparty: str = Form("Unspecified"),
+    department: str = Form("Legal"),
+    x_user: str | None = Header(default=None),
+) -> dict:
+    require_user(x_user)
+    suffix = Path(file.filename or "upload").suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Only PDF, DOC, DOCX, or TXT files are supported")
+
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds the 10 MB upload limit")
+
+    now = datetime.now(timezone.utc)
+    effective_str = now.strftime("%Y-%m-%d")
+    expiry_str = (now.replace(year=now.year + 1)).strftime("%Y-%m-%d")
+
+    with db_connection() as connection:
+        cursor = connection.execute(
+            "INSERT INTO contracts (filename, stored_name, contract_type, counterparty, department, "
+            "status, effective_date, expiry_date, created_at) VALUES (?, ?, ?, ?, ?, 'Pending', ?, ?, ?)",
+            (file.filename, "", contract_type, counterparty, department, effective_str, expiry_str, now.isoformat()),
+        )
+        contract_id = cursor.lastrowid
+        stored_name = f"contract_{contract_id}{suffix}"
+        connection.execute(
+            "UPDATE contracts SET stored_name = ? WHERE contract_id = ?", (stored_name, contract_id)
+        )
+        for index, (stage_name, fixed_department, expected_days) in enumerate(UPLOAD_STAGE_DEFINITIONS):
+            connection.execute(
+                "INSERT INTO approval_stages (contract_id, stage_order, stage_name, assigned_department, "
+                "expected_days, entered_at, completed_at, stage_status) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)",
+                (
+                    contract_id, index, stage_name, fixed_department or department, expected_days,
+                    now.isoformat() if index == 0 else None,
+                    "In Progress" if index == 0 else "Not Started",
+                ),
+            )
+
+    CONTRACTS_DIR.mkdir(parents=True, exist_ok=True)
+    file_path = CONTRACTS_DIR / stored_name
+    file_path.write_bytes(contents)
+
+    try:
+        replace_source(f"contract:{contract_id}", None, extract_file_text(file_path))
+    except Exception:
+        pass  # indexing failures should not block the upload
+
+    return {
+        "contract_id": contract_id,
+        "filename": file.filename,
+        "status": "Pending",
+        "message": "Uploaded and queued for verification",
+    }
 
 @app.get("/documents")
 def list_contracts(x_user: str | None = Header(default=None)) -> list[dict]:
