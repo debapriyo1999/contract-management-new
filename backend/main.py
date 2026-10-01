@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import base64
 import hmac
 import json
@@ -165,6 +165,7 @@ async def upload_document(
     contract_type: str = Form("Uploaded Document"),
     counterparty: str = Form("Unspecified"),
     department: str = Form("Legal"),
+    expiry_date: str | None = Form(None),
     x_user: str | None = Header(default=None),
 ) -> dict:
     require_user(x_user)
@@ -178,7 +179,15 @@ async def upload_document(
 
     now = datetime.now(timezone.utc)
     effective_str = now.strftime("%Y-%m-%d")
-    expiry_str = (now.replace(year=now.year + 1)).strftime("%Y-%m-%d")
+    if expiry_date:
+        try:
+            expiry_str = date.fromisoformat(expiry_date).isoformat()
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="Expiry date must use YYYY-MM-DD format") from error
+        if expiry_str < effective_str:
+            raise HTTPException(status_code=400, detail="Expiry date cannot be before today")
+    else:
+        expiry_str = (now.replace(year=now.year + 1)).strftime("%Y-%m-%d")
 
     with db_connection() as connection:
         cursor = connection.execute(

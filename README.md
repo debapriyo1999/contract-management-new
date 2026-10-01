@@ -61,7 +61,7 @@ Open `http://localhost:5173`. Use **Create account** once, then use **Sign in** 
 
 Signed-in users can upload their own contract files directly from the workspace:
 
-1. Sign in, then fill out the **Upload a document** card (counterparty, department, contract type) and choose a `.pdf`, `.doc`, `.docx`, or `.txt` file (10 MB limit).
+1. Sign in, then fill out the **Upload a document** card (counterparty, department, contract type, and expiry date) and choose a `.pdf`, `.doc`, `.docx`, or `.txt` file (10 MB limit).
 2. Submitting calls `POST /documents/upload` (`backend/main.py`), which:
    - validates the file extension and size,
    - inserts a `contracts` row with status `Pending` and a stored copy in `backend/data/contracts`,

@@ -111,6 +111,7 @@ function UploadForm({ user, onUploaded }) {
   const [contractType, setContractType] = useState("");
   const [counterparty, setCounterparty] = useState("");
   const [department, setDepartment] = useState("Legal");
+  const [expiryDate, setExpiryDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -124,12 +125,14 @@ function UploadForm({ user, onUploaded }) {
     formData.append("contract_type", contractType || "Uploaded Document");
     formData.append("counterparty", counterparty || "Unspecified");
     formData.append("department", department);
+    formData.append("expiry_date", expiryDate);
     try {
       const result = await uploadContract(user, formData);
       setMessage(`${result.filename} uploaded and queued for verification.`);
       setFile(null);
       setContractType("");
       setCounterparty("");
+      setExpiryDate("");
       await onUploaded();
     } catch (error) {
       setMessage(error.message);
@@ -158,6 +161,9 @@ function UploadForm({ user, onUploaded }) {
         </label>
         <label>Contract type
           <input value={contractType} onChange={(event) => setContractType(event.target.value)} placeholder="e.g. Master Service Agreement" />
+        </label>
+        <label>Expiry date
+          <input type="date" value={expiryDate} onChange={(event) => setExpiryDate(event.target.value)} required />
         </label>
         <label className="drop">
           <span className="upload-icon" aria-hidden="true">+</span>
