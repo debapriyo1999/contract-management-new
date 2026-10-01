@@ -128,14 +128,11 @@ All backend credentials and tunable settings live in `backend/.env` (copied once
 | `HF_TOKEN` | `chatbot.py` | Optional Hugging Face access token. When set, the chatbot calls a hosted open-source model for generated answers instead of returning a grounded extractive answer. |
 | `HF_MODEL` | `chatbot.py` | Hugging Face model id to call when `HF_TOKEN` is set (default `HuggingFaceH4/zephyr-7b-beta`). |
 | `HF_API_URL` | `chatbot.py` | Base inference API URL for the Hugging Face model. |
-| `SMTP_HOST`, `SMTP_PORT` | `alert.py` | SMTP server and port used to send contract-expiration emails. |
-| `SMTP_USERNAME`, `SMTP_PASSWORD` | `alert.py` | Mailbox credentials for authenticating with the SMTP server. Use an app password rather than your real account password where the provider supports it. |
-| `SMTP_FROM` | `alert.py` | "From" address on alert emails. |
-| `SMTP_USE_SSL` | `alert.py` | Set to `true` for implicit SSL (e.g. port 465); leave `false` for STARTTLS (e.g. port 587). |
+| Outlook desktop | `alert.py` | Sends alerts through the default account in the locally installed Outlook desktop application via pywin32. Outlook must be configured and running under the Windows user that runs the script. |
 | `ALERT_RECIPIENT` | `alert.py` | Comma-separated list of recipient addresses for expiration alerts. |
 | `ALERT_DAYS_BEFORE` | `alert.py` | How many days before `expiry_date` a contract qualifies for an alert (default `30`). |
 
-No values are required just to run the app locally — if `HF_TOKEN` is unset the chatbot still works using local retrieval, and `alert.py` only needs real SMTP credentials when you actually run it.
+No values are required just to run the app locally — if `HF_TOKEN` is unset the chatbot still works using local retrieval, and `alert.py` only needs Outlook configured when you actually send alerts.
 
 ## Optional SQLite inspection
 
@@ -219,7 +216,7 @@ The Approval Stages report includes a **Create shareable link** action. The reci
 
 ## Contract expiration email alerts
 
-`backend/alert.py` sends an email for each contract that expires exactly `ALERT_DAYS_BEFORE` days from the run date. It reads the existing `contracts` table and does not create or update another database table. Set the `SMTP_*` and `ALERT_*` values in `backend/.env` (see [Environment variables and credentials](#environment-variables-and-credentials)) before running it.
+`backend/alert.py` sends an Outlook email for each contract that expires exactly `ALERT_DAYS_BEFORE` days from the run date. It reads the existing `contracts` table and does not create or update another database table. Configure the default account in the locally installed Outlook desktop application, then set the `ALERT_*` values in `backend/.env` (see [Environment variables and credentials](#environment-variables-and-credentials)) before running it.
 
 Run the alert check from the `backend` folder:
 
@@ -227,7 +224,7 @@ Run the alert check from the `backend` folder:
 .venv\Scripts\python.exe alert.py
 ```
 
-Use `--dry-run` to check which alerts would be sent without connecting to SMTP. Schedule this command once per day with Windows Task Scheduler or another job scheduler.
+Use `--dry-run` to check which alerts would be sent without opening Outlook or sending email. Schedule this command once per day with Windows Task Scheduler or another job scheduler.
 
 ## Legacy manual startup
 

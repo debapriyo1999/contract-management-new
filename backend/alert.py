@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import argparse
 from datetime import date, timedelta
-from email.message import EmailMessage
 import os
 from pathlib import Path
-import smtplib
 import sqlite3
 import sys
 
@@ -26,11 +24,8 @@ class AlertConfigurationError(ValueError):
     pass
 
 
-def setting(name: str, default: str | None = None) -> str:
-    value = os.getenv(name, default or "").strip()
-    if not value:
-        raise AlertConfigurationError(f"Set {name} in backend/.env before sending alerts.")
-    return value
+class AlertDeliveryError(RuntimeError):
+    pass
 
 
 def send_alerts(days: int, recipients: list[str], run_date: date, dry_run: bool) -> int:
@@ -53,21 +48,21 @@ def send_alerts(days: int, recipients: list[str], run_date: date, dry_run: bool)
                 print(f"Would send {contract['filename']} to {recipient}")
         return 0
 
-    username = setting("SMTP_USERNAME")
-    sender = os.getenv("SMTP_FROM", username).strip()
-    server_type = smtplib.SMTP_SSL if os.getenv("SMTP_USE_SSL", "false").lower() in {"1", "true", "yes"} else smtplib.SMTP
-    sent = 0
-    with server_type(setting("SMTP_HOST"), int(os.getenv("SMTP_PORT", "587"))) as server:
-        if server_type is smtplib.SMTP:
-            server.starttls()
-        server.login(username, setting("SMTP_PASSWORD"))
+    try:
+        import win32com.client as win32com
+        import pywintypes
+    except ImportError as error:
+        raise AlertConfigurationError("Install pywin32 before sending alerts.") from error
+
+    try:
+        outlook = win32com.Dispatch("Outlook.Application")
+        sent = 0
         for contract in contracts:
             for recipient in recipients:
-                message = EmailMessage()
-                message["Subject"] = f"Contract expiration alert: {contract['filename']}"
-                message["From"] = sender
-                message["To"] = recipient
-                message.set_content(
+                message = outlook.CreateItem(0)
+                message.Subject = f"Contract expiration alert: {contract['filename']}"
+                message.To = recipient
+                message.Body = (
                     "Contract expiration alert\n\n"
                     f"Contract: {contract['filename']}\n"
                     f"Type: {contract['contract_type']}\n"
@@ -76,8 +71,10 @@ def send_alerts(days: int, recipients: list[str], run_date: date, dry_run: bool)
                     f"Expiration date: {contract['expiry_date']}\n\n"
                     f"This contract expires in {days} days. Please review it in the contract management system."
                 )
-                server.send_message(message)
+                message.Send()
                 sent += 1
+    except pywintypes.com_error as error:
+        raise AlertDeliveryError(f"Outlook could not send the alert: {error}") from error
     print(f"Sent {sent} expiration alert(s).")
     return sent
 
@@ -100,7 +97,7 @@ def main() -> int:
         if not recipients:
             raise AlertConfigurationError("Set ALERT_RECIPIENT or pass --to.")
         send_alerts(args.days, recipients, args.date, args.dry_run)
-    except (AlertConfigurationError, OSError, sqlite3.Error, smtplib.SMTPException) as error:
+    except (AlertConfigurationError, AlertDeliveryError, OSError, sqlite3.Error) as error:
         print(f"Alert failed: {error}", file=sys.stderr)
         return 1
     return 0
